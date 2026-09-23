@@ -1,0 +1,323 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:BclToolApp.ViewModels"
+        xmlns:models="using:BclToolApp.Models"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1100" d:DesignHeight="780"
+        x:Class="BclToolApp.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="BCL Porting &amp; Mod Crash Assistant"
+        Width="1100" Height="780"
+        WindowStartupLocation="CenterScreen">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- Top App Header -->
+        <Border Grid.Row="0" Background="#1E1E2E" Padding="18,14" BorderBrush="#313244" BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                    <TextBlock Text="🛠️" FontSize="22" VerticalAlignment="Center"/>
+                    <StackPanel>
+                        <TextBlock Text="BCL Porting &amp; Mod Crash Assistant" FontSize="16" FontWeight="Bold" Foreground="#CDD6F4"/>
+                        <TextBlock Text="Unity / IL2CPP 모드로더 BCL 스트리핑 진단 및 안전 이식 도우미" FontSize="11" Foreground="#A6ADC8"/>
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text=".NET 8 / Mono.Cecil 기반 무결성 분석" FontSize="11" Foreground="#6C7086" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <!-- Main Content Tabs -->
+        <TabControl Grid.Row="1" Margin="10,6,10,10" SelectedIndex="{Binding SelectedTabIndex}">
+            <TabItem Header="🎯 스트리핑 게임 감지">
+                <Grid RowDefinitions="Auto,*,Auto" Margin="6">
+                    <Border Grid.Row="0" Background="#252538" CornerRadius="8" Padding="14" Margin="0,0,0,10">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="설치된 게임의 BCL API를 검사하고 스트리핑 의심 게임을 먼저 보여줍니다." Foreground="#CDD6F4"/>
+                            <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding GameDiscovery.IsIdle}">
+                                <TextBox Text="{Binding GameDiscovery.SearchRoot}" PlaceholderText="비워두면 Steam 자동 검색 · Steam/steamapps/common/게임 폴더 경로도 입력 가능"/>
+                                <Button Grid.Column="1" Content="🔍 스트리핑 게임 검사" Command="{Binding GameDiscovery.DiscoverCommand}" Margin="8,0,0,0"/>
+                            </Grid>
+                            <TextBox Text="{Binding GameDiscovery.SearchQuery}" PlaceholderText="이름으로 빠른 검색: Neon Abyss, Zombie Rollerz …"/>
+                            <WrapPanel>
+                                <CheckBox Content="스트리핑 의심 / BCL 파일 누락만 보기" IsChecked="{Binding GameDiscovery.OnlySuspected}" Foreground="#F38BA8"/>
+                                <Button Content="검사 취소" Command="{Binding GameDiscovery.DiscoverCancelCommand}" Margin="12,0,0,0"/>
+                            </WrapPanel>
+                            <TextBlock Text="{Binding GameDiscovery.Status}" Foreground="#89B4FA" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                    <ListBox Grid.Row="1" ItemsSource="{Binding GameDiscovery.FilteredGames}" SelectedItem="{Binding GameDiscovery.SelectedGame}" Background="#181825">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="models:InstalledGame">
+                                <Border Padding="10" Margin="0,2" Background="#252538" CornerRadius="6">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="Bold" Foreground="#CDD6F4"/>
+                                        <TextBlock Text="{Binding Details}" Foreground="#A6E3A1"/>
+                                        <TextBlock Text="{Binding Stripping.Summary}" Foreground="{Binding Stripping.Color}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding InstallPath}" FontSize="11" Foreground="#A6ADC8" TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Border Grid.Row="2" Background="#252538" CornerRadius="8" Padding="12" Margin="0,10,0,0">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding GameDiscovery.SelectedGame.ManagedPath, FallbackValue='목록에서 게임을 선택하세요.'}" Foreground="#CDD6F4" TextWrapping="Wrap"/>
+                            <Expander Header="선택한 게임의 누락 API / 판정 근거">
+                                <ScrollViewer MaxHeight="160">
+                                    <TextBlock Text="{Binding GameDiscovery.SelectedGame.Stripping.Details}" Foreground="#CDD6F4" TextWrapping="Wrap"/>
+                                </ScrollViewer>
+                            </Expander>
+                            <WrapPanel IsEnabled="{Binding GameDiscovery.IsIdle}">
+                                <Button Content="선택 게임 다시 검사" Command="{Binding GameDiscovery.RecheckSelectedCommand}" Margin="0,0,8,6"/>
+                                <Button Content="대상 게임으로 지정 →" Command="{Binding GameDiscovery.UseAsTargetCommand}" Margin="0,0,8,6"/>
+                                <Button Content="비교용 Donor로 지정 →" Command="{Binding GameDiscovery.UseAsDonorCommand}" Margin="0,0,8,6"/>
+                                <Button Content="최근 로그 분석 →" Command="{Binding GameDiscovery.LoadLogCommand}" Margin="0,0,8,6"/>
+                                <Button Content="게임 폴더 열기" Command="{Binding GameDiscovery.OpenGameFolderCommand}" Margin="0,0,8,6"/>
+                            </WrapPanel>
+                            <TextBlock Text="mscorlib / System.Core의 14개 표본 API 검사입니다. 통과는 전체 무결성을 뜻하지 않으며, 이미 이식한 게임의 과거 스트리핑 여부는 알 수 없습니다." Foreground="#F9E2AF" FontSize="11" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <!-- TAB 1: 크래시 로그 진단기 -->
+            <TabItem Header="🔍 1. 크래시 로그 진단">
+                <Grid RowDefinitions="Auto,*" Margin="6">
+                    <!-- Control Bar -->
+                    <Border Grid.Row="0" Background="#252538" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                <Button Content="🔍 로그 분석 실행" Command="{Binding LogAnalyzer.AnalyzeLogCommand}"
+                                        Background="#89B4FA" Foreground="#11111B" FontWeight="Bold" Padding="14,8"/>
+                                <Button Content="⚡ BCL 누락 샘플 로드" Command="{Binding LogAnalyzer.LoadSampleBclCrashCommand}"
+                                        Background="#313244" Foreground="#CDD6F4" Padding="10,8"/>
+                                <Button Content="⚡ 게임 스트리핑(비BCL) 샘플 로드" Command="{Binding LogAnalyzer.LoadSampleGameStrippedCrashCommand}"
+                                        Background="#313244" Foreground="#CDD6F4" Padding="10,8"/>
+                                <Button Content="🧹 비우기" Command="{Binding LogAnalyzer.ClearCommand}"
+                                        Background="#313244" Foreground="#A6ADC8" Padding="10,8"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="MelonLoader Latest.log / Player.log / Logcat 붙여넣기"
+                                       Foreground="#6C7086" FontSize="11" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Split Area: Left Input, Right Result -->
+                    <Grid Grid.Row="1" ColumnDefinitions="*,12,*">
+                        <!-- Left: Raw Log Input -->
+                        <Border Grid.Column="0" Background="#181825" CornerRadius="8" BorderBrush="#313244" BorderThickness="1" Padding="8">
+                            <Grid RowDefinitions="Auto,*">
+                                <TextBlock Grid.Row="0" Text="원본 부팅 / 크래시 로그" FontWeight="SemiBold" Foreground="#BAC2DE" Margin="4,2,0,8"/>
+                                <TextBox Grid.Row="1" Text="{Binding LogAnalyzer.LogInputText}"
+                                         AcceptsReturn="True" AcceptsTab="True"
+                                         TextWrapping="NoWrap" FontFamily="Consolas,Cascadia Mono,Courier New"
+                                         FontSize="12" Background="#11111B" Foreground="#CDD6F4"
+                                         BorderThickness="0" PlaceholderText="여기에 크래시 로그를 붙여넣거나 위의 샘플 버튼을 눌러보세요..."/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Right: Analysis Result Card -->
+                        <Border Grid.Column="2" Background="#181825" CornerRadius="8" BorderBrush="#313244" BorderThickness="1" Padding="14">
+                            <ScrollViewer>
+                                <StackPanel Spacing="12">
+                                    <TextBlock Text="진단 및 판정 결과" FontWeight="SemiBold" FontSize="14" Foreground="#BAC2DE"/>
+
+                                    <!-- Diagnosis Badge -->
+                                    <Border Background="{Binding LogAnalyzer.Diagnosis.BadgeColor, FallbackValue='#313244'}"
+                                            CornerRadius="6" Padding="10,8">
+                                        <TextBlock Text="{Binding LogAnalyzer.Diagnosis.CategoryDisplayName, FallbackValue='로그를 입력하고 [분석 실행]을 눌러주세요.'}"
+                                                   FontWeight="Bold" FontSize="13" Foreground="White"/>
+                                    </Border>
+
+                                    <!-- Summary & Member Info -->
+                                    <Border Background="#212133" CornerRadius="6" Padding="12" BorderBrush="#313244" BorderThickness="1">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="핵심 원인 요약" FontWeight="Bold" Foreground="#F5C2E7" FontSize="12"/>
+                                            <TextBlock Text="{Binding LogAnalyzer.Diagnosis.Summary, FallbackValue='-'}"
+                                                       TextWrapping="Wrap" Foreground="#CDD6F4" FontSize="12"/>
+
+                                            <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
+                                                <TextBlock Grid.Column="0" Text="예외 유형: " Foreground="#A6ADC8" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding LogAnalyzer.Diagnosis.ExceptionType, FallbackValue='-'}" Foreground="#89B4FA" FontWeight="SemiBold" FontSize="11"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="Auto,*">
+                                                <TextBlock Grid.Column="0" Text="타겟 멤버/타입: " Foreground="#A6ADC8" FontSize="11"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding LogAnalyzer.Diagnosis.TargetMember, FallbackValue='-'}" Foreground="#FAB387" FontFamily="Consolas" FontSize="11"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Detailed Explanation -->
+                                    <Border Background="#212133" CornerRadius="6" Padding="12" BorderBrush="#313244" BorderThickness="1">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="상세 분석 설명" FontWeight="Bold" Foreground="#89DCEB" FontSize="12"/>
+                                            <TextBlock Text="{Binding LogAnalyzer.Diagnosis.DetailedExplanation, FallbackValue='-'}"
+                                                       TextWrapping="Wrap" Foreground="#BAC2DE" FontSize="11" LineHeight="18"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Action Guide / Recommendation -->
+                                    <Border Background="#24283B" CornerRadius="6" Padding="12" BorderBrush="#F38BA8" BorderThickness="1">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="💡 조치 및 해결 가이드" FontWeight="Bold" Foreground="#F9E2AF" FontSize="12"/>
+                                            <TextBlock Text="{Binding LogAnalyzer.Diagnosis.Recommendation, FallbackValue='-'}"
+                                                       TextWrapping="Wrap" Foreground="#F2CDCD" FontSize="11" LineHeight="18"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Context Snippet -->
+                                    <Expander Header="크래시 전후 추출 문맥 (Context Snippet)" IsExpanded="False" Background="#1E1E2E">
+                                        <TextBox Text="{Binding LogAnalyzer.Diagnosis.ExtractedContext}"
+                                                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                                                 FontFamily="Consolas" FontSize="11" Background="#11111B" Foreground="#A6ADC8"
+                                                 MaxHeight="200" BorderThickness="0"/>
+                                    </Expander>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 2: BCL 어셈블리 비교기 -->
+            <TabItem Header="⚖️ 2. BCL 어셈블리 비교">
+                <Grid RowDefinitions="Auto,*,Auto" Margin="6">
+                    <!-- Path Configuration & Controls -->
+                    <Border Grid.Row="0" Background="#252538" CornerRadius="8" Padding="14" Margin="0,0,0,10">
+                        <StackPanel Spacing="10">
+                            <!-- Paths -->
+                            <Grid ColumnDefinitions="140,*,10,140,*">
+                                <TextBlock Grid.Column="0" Text="게임 Managed 폴더:" VerticalAlignment="Center" Foreground="#BAC2DE" FontSize="12"/>
+                                <TextBox Grid.Column="1" Text="{Binding AssemblyDiff.GameManagedPath}"
+                                         PlaceholderText="예: C:\Games\TargetGame\TargetGame_Data\Managed" FontSize="11"/>
+
+                                <TextBlock Grid.Column="3" Text="기증(Donor) BCL 폴더:" VerticalAlignment="Center" Foreground="#BAC2DE" FontSize="12"/>
+                                <TextBox Grid.Column="4" Text="{Binding AssemblyDiff.DonorBclPath}"
+                                         PlaceholderText="예: C:\Unity\MonoBleedingEdge\lib\mono\unityjit" FontSize="11"/>
+                            </Grid>
+
+                            <!-- Actions & Filter -->
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                                <Button Grid.Column="0" Content="🔍 디렉토리 비교 스캔" Command="{Binding AssemblyDiff.ScanCommand}"
+                                        Background="#A6E3A1" Foreground="#11111B" FontWeight="Bold" Padding="12,6" Margin="0,0,10,0"/>
+                                <Button Grid.Column="1" Content="전체 누락 DLL 이식 선택/해제" Command="{Binding AssemblyDiff.ToggleSelectAllMissingCommand}"
+                                        Background="#313244" Foreground="#CDD6F4" Padding="10,6" Margin="0,0,10,0"/>
+                                <CheckBox Grid.Column="2" Content="누락·차이·분석 오류만 표시" IsChecked="{Binding AssemblyDiff.FilterOnlyMissing}"
+                                          Foreground="#BAC2DE" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="3" Text="{Binding AssemblyDiff.StatusSummary}"
+                                           Foreground="#89B4FA" FontSize="11" VerticalAlignment="Center"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Assembly List -->
+                    <Border Grid.Row="1" Background="#181825" CornerRadius="8" BorderBrush="#313244" BorderThickness="1" Padding="8">
+                        <ScrollViewer>
+                            <ListBox ItemsSource="{Binding AssemblyDiff.FilteredDiffItems}" SelectedItem="{Binding AssemblyDiff.SelectedItem}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="models:AssemblyDiffItem">
+                                        <Border Margin="0,2,0,2" Padding="10,8" Background="#1E1E2E" CornerRadius="6" BorderBrush="#313244" BorderThickness="1">
+                                            <Grid ColumnDefinitions="30,220,130,130,160,*">
+                                                <!-- Transplant Checkbox -->
+                                                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForTransplant}" IsEnabled="{Binding CanTransplant}" VerticalAlignment="Center"/>
+
+                                                <!-- Assembly Name -->
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding FileName}" FontWeight="Bold" Foreground="#CDD6F4" FontSize="12"/>
+                                                    <TextBlock Text="{Binding DonorTargetFramework}" Foreground="#6C7086" FontSize="10"/>
+                                                </StackPanel>
+
+                                                <!-- Game Version -->
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="게임:" Foreground="#6C7086" FontSize="9"/>
+                                                    <TextBlock Text="{Binding GameVersion}" Foreground="#BAC2DE" FontSize="11" FontFamily="Consolas"/>
+                                                </StackPanel>
+
+                                                <!-- Donor Version -->
+                                                <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                                    <TextBlock Text="Donor:" Foreground="#6C7086" FontSize="9"/>
+                                                    <TextBlock Text="{Binding DonorVersion}" Foreground="#BAC2DE" FontSize="11" FontFamily="Consolas"/>
+                                                </StackPanel>
+
+                                                <!-- Status Badge -->
+                                                <Border Grid.Column="4" Background="{Binding StatusColor}" CornerRadius="4" Padding="6,3" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding StatusDisplayName}" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                                </Border>
+
+                                                <!-- Notes -->
+                                                <TextBlock Grid.Column="5" Text="{Binding Notes}" Foreground="#A6ADC8" FontSize="11"
+                                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Bottom: Deep Symbol Inspector via Mono.Cecil -->
+                    <Border Grid.Row="2" Background="#212133" CornerRadius="8" Padding="12" Margin="0,10,0,0" BorderBrush="#313244" BorderThickness="1">
+                        <Grid RowDefinitions="Auto,Auto">
+                            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,6">
+                                <TextBlock Grid.Column="0" Text="🔬 어셈블리 내 특정 API/심볼 스트리핑 정밀 검사:"
+                                           FontWeight="SemiBold" Foreground="#F9E2AF" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBox Grid.Column="1" Text="{Binding AssemblyDiff.SymbolSearchQuery}"
+                                         PlaceholderText="예: System.Linq.Enumerable.Select 또는 System.String" FontSize="11"/>
+                                <Button Grid.Column="2" Content="심볼 검사" Command="{Binding AssemblyDiff.SearchSymbolCommand}"
+                                        Background="#89B4FA" Foreground="#11111B" FontWeight="Bold" Padding="12,5" Margin="8,0,0,0"/>
+                            </Grid>
+                            <TextBlock Grid.Row="1" Text="{Binding AssemblyDiff.SymbolSearchResult, FallbackValue='검사할 심볼을 입력하고 [심볼 검사]를 누르세요.'}"
+                                       Foreground="#A6E3A1" FontSize="11" FontFamily="Consolas"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 3: 안전 BCL 이식 도우미 -->
+            <TabItem Header="💉 3. 안전 BCL 이식 관리자">
+                <Grid RowDefinitions="Auto,*" Margin="6">
+                    <!-- Safety Guidelines Card -->
+                    <Border Grid.Row="0" Background="#2A2234" CornerRadius="8" Padding="14" Margin="0,0,0,10" BorderBrush="#F38BA8" BorderThickness="1">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="🛡️ 안전한 BCL 이식 원칙 &amp; 주의사항" FontWeight="Bold" Foreground="#F38BA8" FontSize="13"/>
+                            <TextBlock Text="1. 무분별한 BCL 복사는 피하세요: 특히 mscorlib.dll 교체 시 런타임 ABI(System.Object 정체성)가 깨져 즉시 게임이 죽을 수 있습니다."
+                                       Foreground="#CDD6F4" FontSize="11"/>
+                            <TextBlock Text="2. 먼저 [어셈블리 비교] 탭에서 누락된 BCL(System.Core.dll 등)만 체크박스로 선택하세요."
+                                       Foreground="#CDD6F4" FontSize="11"/>
+                            <TextBlock Text="3. 자동 백업은 Managed 최상위 원본 파일을 보존하고, 복원 시 이번 이식으로 추가한 DLL을 제거합니다."
+                                       Foreground="#A6E3A1" FontSize="11"/>
+
+                            <!-- Controls -->
+                            <Grid ColumnDefinitions="Auto,12,Auto,12,Auto,*" Margin="0,6,0,0">
+                                <CheckBox Grid.Column="0" Content="이식 전 자동 타임스탬프 백업 생성" IsChecked="{Binding Transplant.AutoBackup}"
+                                          Foreground="#BAC2DE" VerticalAlignment="Center"/>
+                                <Button Grid.Column="2" Content="🚀 선택된 BCL 안전 이식 실행" Command="{Binding Transplant.ExecuteTransplantCommand}"
+                                        Background="#F38BA8" Foreground="#11111B" FontWeight="Bold" Padding="14,8"/>
+                                <Button Grid.Column="4" Content="⏪ 최근 백업으로 롤백 복원" Command="{Binding Transplant.RestoreLastBackupCommand}"
+                                        Background="#313244" Foreground="#CDD6F4" Padding="12,8" IsEnabled="{Binding Transplant.HasBackup}"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Realtime Execution Log -->
+                    <Border Grid.Row="1" Background="#181825" CornerRadius="8" BorderBrush="#313244" BorderThickness="1" Padding="10">
+                        <Grid RowDefinitions="Auto,*">
+                            <TextBlock Grid.Row="0" Text="이식 및 백업 실행 기록" FontWeight="SemiBold" Foreground="#BAC2DE" Margin="2,0,0,8"/>
+                            <TextBox Grid.Row="1" Text="{Binding Transplant.ExecutionLog}"
+                                     IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                                     FontFamily="Consolas,Cascadia Mono" FontSize="12"
+                                     Background="#11111B" Foreground="#A6ADC8" BorderThickness="0"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Grid>
+
+</Window>
+
+
+
