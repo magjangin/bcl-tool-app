@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Assets/app-icon.png" width="128" height="128" alt="BCL Tool App Logo" />
+</p>
+
 # BCL Porting & Mod Crash Assistant (BCL Tool App)
 
 [![.NET 8.0](https://img.shields.io/badge/.NET-8.0%20LTS-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
