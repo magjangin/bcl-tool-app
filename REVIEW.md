@@ -2,6 +2,8 @@
 
 검토일: 2026-09-09
 
+> 2026-09-09 시점의 기록입니다. 이후 Git 저장소로 옮겨졌고 테스트는 78개로 늘었습니다. 현재 상태와 남은 문제는 [README](README.md)와 [05. 알려진 문제](docs/05-known-issues-and-improvements.md)를 보세요.
+
 ## 검토 범위
 
 Services 3개, ViewModels 5개, Models 2개, View 및 시작 코드, AXAML, 솔루션/프로젝트/manifest/.gitignore와 기존 테스트 전체를 검토했다. 아이콘은 파일 존재와 크기를 확인했다. bin/obj의 생성 코드와 외부 라이브러리는 소스 검토 대상에서 제외했다. 이 작업 폴더에는 Git 저장소가 없다.

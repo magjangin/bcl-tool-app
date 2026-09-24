@@ -22,7 +22,7 @@
    - SHA-256 해시 검증 및 디스크 링크(Junction/Symlink) 보호
    - 이식 실패 시 자동 롤백 및 원상 복구 메커니즘
 5. [**05. 알려진 문제 및 개선 로드맵 (Known Issues & Roadmap)**](./05-known-issues-and-improvements.md)
-   - 단위 테스트(`BugReproTests.cs`) 기반 10대 해결 과제
+   - 해결된 재현 테스트 10건과 2026-09-24 점검에서 찾은 남은 문제
    - 비동기 I/O 전환, FolderPicker UI, 다중 백업 관리자 등 개선 로드맵
 
 ---
@@ -41,13 +41,13 @@ dotnet run --project BclToolApp.csproj -c Release
 ### 기본 권장 워크플로우
 ```mermaid
 flowchart LR
-    A[1. 스트리핑 게임 감지] --> B[Steam 자동 검색 및 14개 표본 API 정적 검사]
+    A[1. 스트리핑 게임 감지] --> B[Steam 자동 검색 및 17개 표본 API 정적 검사]
     B --> C{스트리핑 의심?}
     C -->|Yes| D[대상 게임으로 지정]
     C -->|No / 수동확인| E[크래시 로그 진단]
     E --> F[2. 어셈블리 비교]
     D --> F
-    F --> G[Donor BCL 지정 및 누락 DLL 체크]
+    F --> G[Donor BCL 수동 지정 및 교체할 DLL 체크]
     G --> H[3. 안전 이식 실행]
     H --> I[자동 백업 생성 -> SHA-256 검증 이식]
 ```
