@@ -13,12 +13,13 @@ public sealed class BclStrippingDetectorTests : IDisposable
     public BclStrippingDetectorTests() => Directory.CreateDirectory(root);
 
     // Construct valid managed metadata, then remove APIs as a linker would.
-    private static void WriteFixture(string directory, Func<BclStrippingDetectorService.ApiProbe, bool>? keep = null)
+    private static void WriteFixture(string directory, Func<BclStrippingDetectorService.ApiProbe, bool>? keep = null, int mscorlibMajor = 4)
     {
         Directory.CreateDirectory(directory);
         foreach (var group in BclStrippingDetectorService.Probes.GroupBy(p => p.Assembly))
         {
-            using var asm = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("Fixture." + group.Key, new Version(4, 0, 0, 0)), group.Key, ModuleKind.Dll);
+            var version = new Version(group.Key == "mscorlib" ? mscorlibMajor : 4, 0, 0, 0);
+            using var asm = AssemblyDefinition.CreateAssembly(new AssemblyNameDefinition("Fixture." + group.Key, version), group.Key, ModuleKind.Dll);
             var module = asm.MainModule;
             if (group.Key == "mscorlib")
             {
@@ -49,6 +50,7 @@ public sealed class BclStrippingDetectorTests : IDisposable
 
     private static TypeReference Parse(string signature, ModuleDefinition module, TypeDefinition owner, MethodDefinition method)
     {
+        if (signature.EndsWith('&')) return new ByReferenceType(Parse(signature[..^1], module, owner, method));
         if (signature.StartsWith("!!")) return method.GenericParameters[int.Parse(signature[2..])];
         if (signature.StartsWith('!')) return owner.GenericParameters[int.Parse(signature[1..])];
         int generic = signature.IndexOf('<');
@@ -68,9 +70,32 @@ public sealed class BclStrippingDetectorTests : IDisposable
         WriteFixture(root);
         var report = detector.InspectManagedDirectory(root);
         Assert.Equal(BclStrippingStatus.NoProbeGaps, report.Status);
-        Assert.Equal(14, report.CheckedApis);
+        Assert.Equal(BclStrippingDetectorService.Probes.Count, report.CheckedApis);
         Assert.Equal(0, report.MissingApis);
         Assert.Contains("전체 무결성은 미확인", report.Summary);
+    }
+
+    [Fact]
+    public void LoaderCrashPointsAreCaughtWhenCommonApisSurvive()
+    {
+        // Shape of Neon Abyss's original mscorlib: every common API kept, GetPEKind and most of TypeInfo stripped.
+        WriteFixture(root, p => p.Method != "GetPEKind" && p.Type != "System.Reflection.TypeInfo");
+        var report = detector.InspectManagedDirectory(root);
+        Assert.Equal(BclStrippingStatus.Suspected, report.Status);
+        Assert.Equal(3, report.MissingApis);
+        Assert.Contains(report.Evidence, e => e.Contains("[메서드 누락]") && e.Contains("Module.GetPEKind"));
+        Assert.Contains(report.Evidence, e => e.Contains("TypeInfo.GetDeclaredMethod"));
+    }
+
+    [Fact]
+    public void ProbesForNewerProfileAreSkippedOnOldMscorlib()
+    {
+        // mscorlib 2.0 never had TypeInfo (.NET 4.5); that is the profile, not stripping.
+        WriteFixture(root, p => p.Type != "System.Reflection.TypeInfo", mscorlibMajor: 2);
+        var report = detector.InspectManagedDirectory(root);
+        Assert.Equal(BclStrippingStatus.NoProbeGaps, report.Status);
+        Assert.Equal(0, report.MissingApis);
+        Assert.Equal(BclStrippingDetectorService.Probes.Count(p => p.MinMajorVersion <= 2), report.CheckedApis);
     }
 
     [Fact]

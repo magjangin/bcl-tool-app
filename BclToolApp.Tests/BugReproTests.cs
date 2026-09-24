@@ -73,6 +73,29 @@ public sealed class BugReproTests : IDisposable
         Assert.False(result.IsBclTransplantCandidate);
     }
 
+    [Theory]
+    // Real MelonLoader failure on a stripped mscorlib.
+    [InlineData("[12:00:00.000] [ERROR] System.TypeLoadException: VTable setup of type System.Reflection.DelegatingTypeInfo failed")]
+    // Mono also nests it inside a field load failure.
+    [InlineData("System.TypeLoadException: Could not load type of field 'Mod.Patcher:info' (0) due to: VTable setup of type System.Reflection.DelegatingTypeInfo failed assembly:Mod.dll type:Patcher member:(null)")]
+    public void VTableSetupFailureOfReflectionTypeIsTransplantCandidate(string log)
+    {
+        var result = analyzer.Analyze(log);
+        Assert.True(result.IsBclTransplantCandidate, $"Category={result.Category}, Member='{result.TargetMember}'");
+        Assert.Equal("System.Reflection.DelegatingTypeInfo", result.TargetMember);
+        Assert.Contains("VTable", result.ExceptionType);
+        Assert.Contains("GetPEKind", result.Recommendation);
+    }
+
+    [Fact]
+    public void VTableSetupFailureOfThirdPartyTypeIsNotTransplantCandidate()
+    {
+        // Shape of the In Falsus Demo case: a stripped third-party ZString.dll, not the BCL.
+        var result = analyzer.Analyze("System.TypeLoadException: VTable setup of type Cysharp.Text.Utf16ValueStringBuilder failed");
+        Assert.False(result.IsBclTransplantCandidate, $"Category={result.Category}");
+        Assert.Equal("Cysharp.Text.Utf16ValueStringBuilder", result.TargetMember);
+    }
+
     [Fact]
     public async Task ApiMissingFromGameProfileIsNotTreatedAsStripping()
     {

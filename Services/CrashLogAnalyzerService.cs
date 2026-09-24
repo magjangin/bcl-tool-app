@@ -16,6 +16,12 @@ public class CrashLogAnalyzerService
         @"(?:System\.)?TypeLoadException:\s*(?:Could not resolve type with token [0-9a-fA-F]+ from typeref \(expected (?:class|type) ['""]?([^'""]+)['""]? in assembly ['""]?([^'""]+)['""]?\)|Could not (?:load|resolve) type ['""]?([^'""]+)['""]?\s*(?:from|in) assembly\s*['""]?([^'""]+)['""]?)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
 
+    // Mono cannot build a type whose base or interface lost virtual methods to stripping,
+    // e.g. MelonLoader's System.Reflection.DelegatingTypeInfo over a stripped TypeInfo.
+    private static readonly Regex VTableSetupRegex = new(
+        @"VTable setup of type ['""]?([^'""\s]+)['""]? failed",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
+
     private static readonly Regex FileNotFoundRegex = new(
         @"(?:System\.IO\.)?(?:FileNotFoundException|FileLoadException):\s*(?:Could not load file or assembly\s*['""]?([^'""]+)['""]?)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1));
@@ -69,6 +75,9 @@ public class CrashLogAnalyzerService
 
             var mm = MissingMethodRegex.Match(line);
             if (mm.Success) { crashLineIndex = i; matchedRegex = mm; matchedType = "MissingMethodException"; break; }
+
+            var vt = VTableSetupRegex.Match(line);
+            if (vt.Success) { crashLineIndex = i; matchedRegex = vt; matchedType = "VTableSetup"; break; }
 
             var tl = TypeLoadRegex.Match(line);
             if (tl.Success) { crashLineIndex = i; matchedRegex = tl; matchedType = "TypeLoadException"; break; }
@@ -169,6 +178,25 @@ public class CrashLogAnalyzerService
                 result.Recommendation = "✅ BCL 이식 또는 프로파일 정렬 대상입니다!\n• 대상 어셈블리의 누락 타입을 포함한 정품/완전한 BCL 어셈블리로 교체하거나 모드로더의 의존성 프로파일을 맞추세요.";
             }
         }
+        else if (matchedType == "VTableSetup")
+        {
+            string typeName = match.Groups[1].Value.Trim();
+            result.ExceptionType = "TypeLoadException (VTable setup)";
+            result.TargetMember = typeName;
+
+            if (IsGameSpecificMember(typeName))
+            {
+                result.Category = CrashCategory.GameCodeStripping;
+                result.Summary = $"게임 전용 타입 VTable 구성 실패: {typeName}";
+                result.DetailedExplanation = fullLine;
+                result.Recommendation = "⛔ BCL 이식 대상이 아닙니다!\n• 게임 어셈블리의 부모 타입이 잘린 경우로, BCL DLL 교체로는 해결할 수 없습니다.";
+            }
+            else
+            {
+                // Narrowed by HasBclEvidence below: only System.* types stay transplant candidates.
+                result.Category = CrashCategory.BclStrippedApi;
+            }
+        }
         else if (matchedType == "FileNotFoundException")
         {
             string asmName = match.Groups[1].Value.Trim();
@@ -230,8 +258,16 @@ public class CrashLogAnalyzerService
         {
             result.Summary = "BCL API 또는 의존성 불일치 가능성: " +
                 (string.IsNullOrEmpty(result.TargetMember) ? result.TargetAssembly : result.TargetMember);
-            result.DetailedExplanation = "로그 패턴에 따른 추정입니다. 스트리핑, 버전 불일치, 의존성 로드 실패를 추가로 구분해야 합니다.";
-            result.Recommendation = "대상 런타임과 어셈블리의 API를 비교한 후 이식을 검토하세요. IL2CPP의 AOT 컴파일된 게임 코드는 Managed DLL 복사로 복구되지 않습니다.";
+            if (matchedType == "VTableSetup")
+            {
+                result.DetailedExplanation = $"{result.TargetMember}의 부모 타입 또는 인터페이스에서 가상 메서드가 빠져 VTable을 만들지 못했습니다. 스트리핑된 mscorlib 위에서 MelonLoader가 System.Reflection.TypeInfo를 상속할 때 나타나는 대표 증상입니다.";
+                result.Recommendation = "[스트리핑 게임 감지] 탭에서 이 게임을 다시 검사해 Module.GetPEKind · TypeInfo 누락을 확인하세요.\n• 누락이 확인되면 mscorlib를 포함한 BCL 이식을 검토하세요. 부모 타입이 mscorlib에 있으므로 System.Core 등만 바꿔서는 해결되지 않습니다.";
+            }
+            else
+            {
+                result.DetailedExplanation = "로그 패턴에 따른 추정입니다. 스트리핑, 버전 불일치, 의존성 로드 실패를 추가로 구분해야 합니다.";
+                result.Recommendation = "대상 런타임과 어셈블리의 API를 비교한 후 이식을 검토하세요. IL2CPP의 AOT 컴파일된 게임 코드는 Managed DLL 복사로 복구되지 않습니다.";
+            }
         }
         return result;
     }

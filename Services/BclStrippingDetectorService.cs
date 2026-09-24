@@ -17,12 +17,19 @@ public sealed class BclStrippingDetectorService
 
     public sealed record ApiProbe(string Assembly, string Type, string Method, int GenericArity, params string[] Parameters)
     {
+        /// <summary>Older profiles never had the API, so the probe is skipped there instead of reported missing.</summary>
+        public int MinMajorVersion { get; init; }
         public string Label => $"{Type}.{Method}({string.Join(", ", Parameters)})";
     }
 
     // APIs present in classic Mono's .NET 2/3.5/4.x BCL. This is a sample, not a full reference API catalog.
     public static IReadOnlyList<ApiProbe> Probes { get; } = Array.AsReadOnly(new[]
     {
+        // Loaders fail here on stripped games (BepInEx 6: MissingMethodException GetPEKind; MelonLoader: VTable setup of a
+        // TypeInfo subclass). Games rarely call these, so they are stripped even when the common APIs below survive.
+        new ApiProbe("mscorlib", "System.Reflection.Module", "GetPEKind", 0, "System.Reflection.PortableExecutableKinds&", "System.Reflection.ImageFileMachine&"),
+        new ApiProbe("mscorlib", "System.Reflection.TypeInfo", "GetDeclaredMethod", 0, "System.String") { MinMajorVersion = 4 },
+        new ApiProbe("mscorlib", "System.Reflection.TypeInfo", "get_DeclaredMethods", 0) { MinMajorVersion = 4 },
         new ApiProbe("mscorlib", "System.Activator", "CreateInstance", 0, "System.Type"),
         new ApiProbe("mscorlib", "System.Type", "GetMethod", 0, "System.String"),
         new ApiProbe("mscorlib", "System.Reflection.Assembly", "GetTypes", 0),
@@ -92,6 +99,7 @@ public sealed class BclStrippingDetectorService
                 evidence.Add($"[메타데이터] {group.Key}.dll {assembly.Name.Version} · 타입 {types.Count}개");
                 foreach (var probe in group)
                 {
+                    if (assembly.Name.Version.Major < probe.MinMajorVersion) continue;
                     if (forwarded.Contains(probe.Type))
                     {
                         inconclusive = true;

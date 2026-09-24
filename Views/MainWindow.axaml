@@ -79,7 +79,7 @@
                                 <Button Content="최근 로그 분석 →" Command="{Binding GameDiscovery.LoadLogCommand}" Margin="0,0,8,6"/>
                                 <Button Content="게임 폴더 열기" Command="{Binding GameDiscovery.OpenGameFolderCommand}" Margin="0,0,8,6"/>
                             </WrapPanel>
-                            <TextBlock Text="mscorlib / System.Core의 14개 표본 API 검사입니다. 통과는 전체 무결성을 뜻하지 않으며, 이미 이식한 게임의 과거 스트리핑 여부는 알 수 없습니다." Foreground="#F9E2AF" FontSize="11" TextWrapping="Wrap"/>
+                            <TextBlock Text="mscorlib / System.Core 표본 API 검사입니다(모드로더가 실제로 막히는 Module.GetPEKind · TypeInfo 포함). 통과는 전체 무결성을 뜻하지 않으며, 이미 이식한 게임의 과거 스트리핑 여부는 알 수 없습니다." Foreground="#F9E2AF" FontSize="11" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
                 </Grid>
