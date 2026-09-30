@@ -6,7 +6,7 @@
 
 [![.NET 8.0](https://img.shields.io/badge/.NET-8.0%20LTS-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Avalonia UI 12](https://img.shields.io/badge/Avalonia%20UI-12.0-purple?logo=avalonia)](https://avaloniaui.net/)
-[![Tests](https://img.shields.io/badge/Tests-78%20passed-brightgreen)](#-검증-및-테스트)
+[![Tests](https://img.shields.io/badge/Tests-99%20passed-brightgreen)](#-검증-및-테스트)
 
 Unity 게임 모딩(MelonLoader, BepInEx 등) 시 Unity의 **관리 코드 스트리핑(Managed Code Stripping)**으로 인해 발생하는 BCL(Base Class Library: `mscorlib.dll`, `System.Core.dll` 등) 결손 및 모드로더 부트스트랩 실패/크래시를 오프라인에서 안전하게 탐지, 진단, 복구(이식)하는 크로스플랫폼 GUI 데스크톱 도구입니다.
 
@@ -32,7 +32,10 @@ Unity 게임 모딩(MelonLoader, BepInEx 등) 시 Unity의 **관리 코드 스�
 - BCL 결손(`MissingMethodException`, `TypeLoadException`, MelonLoader의 `VTable setup of type ... failed`, `FileNotFoundException`), 엔진 내부 icall, 모드로더 부트스트랩 실패, 런타임 프로파일(.NET 2.0 vs .NET 4.6+) 불일치를 자동 분류하고 맞춤형 해결 가이드를 제공합니다.
 
 ### 3. ⚖️ 어셈블리 비교 도구 (`Assembly Diff Inspector`)
-- 대상 게임(Target)과 온전한 BCL을 가진 기증 게임(Donor)의 `Managed` 디렉터리 내 DLL 목록, 버전, SHA-256 해시 차이를 테이블 형태로 시각화합니다.
+- **⚡ 자동 준비 (한 번에)**: 게임 설치 폴더 경로만 붙여넣고 버튼 하나를 누르면 ①`Managed` 경로 해석(`*_Data`·실행 파일·따옴표 경로 모두 인식) → ②도너 자동 탐색 → ③디렉터리 비교 → ④교체할 BCL 자동 체크까지 진행하고, 남은 일은 [3. 안전 이식] 탭에서 실행하는 것뿐입니다.
+- **도너 자동 찾기**: 대상 게임의 Unity 버전(`UnityPlayer.dll` 버전 리소스 또는 `*_Data/globalgamemanagers`)과 mscorlib 프로파일을 읽어, 설치된 게임과 Unity 에디터 Mono 프로파일 중 **같은 LTS 줄 · mscorlib이 온전하고(`Module.GetPEKind` 보유, 메서드 수 최대) · 패치가 가까운** 도너를 순위로 제시합니다. 같은 LTS 줄 후보만 자동 적용하고, 다른 줄·버전 미확인 후보는 목록에만 표시합니다.
+- **권장 BCL 자동 선택**: 도너 쪽이 더 온전한 BCL 파일만 체크합니다(예: `mscorlib.dll 2,729,472B → 4,632,064B`). 도너 게임의 `Assembly-CSharp.dll`·`UnityEngine.*.dll`은 아예 이식할 수 없고, `System.Memory.dll` 같은 NuGet 패키지는 BCL로 취급하지 않습니다.
+- 대상과 도너의 DLL 목록, 버전, 파일 크기 변화, SHA-256 해시 차이를 테이블로 보여주며, 기본값은 BCL 어셈블리만 표시입니다(도너 게임 DLL 수백 개에 묻히지 않도록).
 - 타입/메서드 시그니처 심볼 검색을 지원하여 특정 API가 양쪽 어셈블리에 존재하는지 즉시 대조할 수 있습니다.
 
 ### 4. 🛡️ 안전 이식 및 복원 (`Safe Transplant & Restore`)
@@ -51,7 +54,7 @@ Unity 게임 모딩(MelonLoader, BepInEx 등) 시 Unity의 **관리 코드 스�
 | **UI 프레임워크** | **Avalonia UI 12** | 크로스플랫폼 XAML 데스크톱 UI (Fluent Theme) |
 | **MVVM 패턴** | **CommunityToolkit.Mvvm** | `[ObservableProperty]`, `[RelayCommand]` 기반 클린 아키텍처 |
 | **정적 분석 엔진** | **Mono.Cecil 0.11.6** | 게임 실행 없는 PE 어셈블리 메타데이터 분석 |
-| **단위 테스트** | **xUnit + Avalonia.Headless** | 비헤드리스 단위 테스트 및 UI 헤드리스 세션 테스트 (78개 테스트) |
+| **단위 테스트** | **xUnit + Avalonia.Headless** | 비헤드리스 단위 테스트 및 UI 헤드리스 세션 테스트 (99개 테스트) |
 
 ---
 
@@ -71,7 +74,7 @@ cd bcl-tool-app
 dotnet build BclToolApp.sln -c Release
 ```
 
-### 3. 테스트 실행 (78개 테스트 All-Green)
+### 3. 테스트 실행 (99개 테스트 All-Green)
 ```powershell
 dotnet test BclToolApp.sln -p:UsedAvaloniaProducts= -v:minimal
 ```
@@ -100,5 +103,5 @@ dotnet run --project BclToolApp.csproj
 ## ⚠️ 주의 사항
 
 1. **Mono 전용 분석**: 본 도구의 BCL 검사는 Unity **Mono** 런타임 게임을 대상으로 합니다. IL2CPP 환경은 C++로 사전 컴파일되므로 Managed DLL 복사만으로 AOT 스트리핑을 복구할 수 없습니다.
-2. **Donor 선택은 수동입니다**: 도너를 자동으로 찾는 기능은 아직 없습니다. 대상 게임과 같은 Unity LTS 줄(예: 2019.4.x)에서 패치 버전이 가까운 게임을 고르고, 도너 mscorlib에 `Module.GetPEKind`가 있는지와 메서드 수가 충분한지 확인하세요. 기준과 실측 사례는 [02. 스트리핑 가이드](docs/02-melonloader-bcl-stripping-guide.md#4-donor-bcl-선택-요령-및-주의사항)에 있습니다.
+2. **자동으로 찾은 Donor도 최종 확인은 사람 몫입니다**: [도너 자동 찾기]는 Unity LTS 줄·패치 거리·mscorlib 온전성으로 후보를 거르지만, 엔진 바이너리가 실제로 호환되는지는 검증하지 않습니다(같은 줄 안에서도 `mono-2.0-bdwgc.dll`은 메가바이트 단위로 다릅니다). 자동 적용 후에도 후보 근거를 확인하고, 이식 전 백업을 유지하세요. 기준과 실측 사례는 [02. 스트리핑 가이드](docs/02-melonloader-bcl-stripping-guide.md#4-donor-bcl-선택-요령-및-주의사항)에 있습니다.
 3. **mscorlib 교체 주의**: `mscorlib.dll`은 런타임 엔진(Mono)과 긴밀히 결합되어 있어, 엔진이 맞지 않는 도너를 쓰면 게임이 켜지지 않을 수 있습니다. 다만 모드로더 크래시의 원인은 대부분 mscorlib에 있으므로, 부속 DLL만 바꿔서는 해결되지 않는 경우가 많습니다.

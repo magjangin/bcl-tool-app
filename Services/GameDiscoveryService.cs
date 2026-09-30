@@ -89,6 +89,58 @@ public sealed class GameDiscoveryService
         return result;
     }
 
+    /// <summary>Turns whatever the user pasted — game folder, *_Data, Managed, the .exe, a Unity editor
+    /// profile — into the folder that actually holds the BCL. Quotes and trailing separators are tolerated.</summary>
+    public static (string? Path, string Note) ResolveBclDirectory(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return (null, "경로를 입력하세요.");
+        string path;
+        try
+        {
+            path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(input.Trim().Trim('"')));
+            if (File.Exists(path)) path = Path.GetDirectoryName(path) ?? path;
+            if (!Directory.Exists(path)) return (null, $"폴더가 존재하지 않습니다: {path}");
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return (null, $"경로 형식이 잘못되었습니다: {ex.Message}");
+        }
+        try
+        {
+            // Already a BCL folder (game Managed, or a Unity editor mono profile).
+            if (File.Exists(Path.Combine(path, "mscorlib.dll")) ||
+                string.Equals(Path.GetFileName(path), "Managed", StringComparison.OrdinalIgnoreCase))
+                return (path, string.Empty);
+            var managed = Path.Combine(path, "Managed");
+            if (Directory.Exists(managed)) return (managed, $"{Path.GetFileName(path)}\\Managed 폴더로 인식했습니다.");
+
+            var candidates = Directory.GetDirectories(path, "*_Data")
+                .Select(d => Path.Combine(d, "Managed")).Where(Directory.Exists).OrderBy(d => d).ToArray();
+            if (candidates.Length == 1)
+                return (candidates[0], $"게임 폴더에서 Managed 폴더를 찾았습니다: ...\\{Path.GetFileName(Path.GetDirectoryName(candidates[0])!)}\\Managed");
+            if (candidates.Length > 1)
+            {
+                var exe = Directory.GetFiles(path, "*.exe").Select(Path.GetFileNameWithoutExtension).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var match = candidates.FirstOrDefault(c =>
+                    exe.Contains(Path.GetFileName(Path.GetDirectoryName(c)!).Replace("_Data", string.Empty)));
+                return match != null
+                    ? (match, $"Managed 후보가 여러 개라 실행 파일과 같은 이름을 골랐습니다: {match}")
+                    : (null, "Managed 후보가 여러 개입니다. 사용할 폴더를 직접 지정하세요: " + string.Join(" / ", candidates));
+            }
+            if (File.Exists(Path.Combine(path, "GameAssembly.dll")) ||
+                Directory.GetDirectories(path, "*_Data").Any(d => File.Exists(Path.Combine(d, "il2cpp_data", "Metadata", "global-metadata.dat"))))
+                return (null, "IL2CPP 게임입니다. Managed DLL 이식으로는 복구할 수 없습니다.");
+            // A folder of assemblies without mscorlib is still usable (a partial BCL set the user extracted).
+            if (Directory.GetFiles(path, "*.dll").Length > 0)
+                return (path, "mscorlib.dll이 없는 폴더입니다. BCL 폴더가 맞는지 확인하세요.");
+            return (null, "이 폴더에서 Managed(BCL) 폴더를 찾지 못했습니다. 게임 설치 폴더나 Managed 폴더를 지정하세요.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return (null, $"폴더를 읽을 수 없습니다: {ex.Message}");
+        }
+    }
+
     public InstalledGame? InspectGame(string path)
     {
         if (!Directory.Exists(path) || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) return null;

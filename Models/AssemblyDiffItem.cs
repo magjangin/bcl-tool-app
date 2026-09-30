@@ -1,3 +1,4 @@
+using BclToolApp.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace BclToolApp.Models;
@@ -46,7 +47,18 @@ public partial class AssemblyDiffItem : ObservableObject
     };
 
     public bool IsCriticalBcl { get; set; }
-    public bool CanTransplant => DonorExists && Status != AssemblyDiffStatus.InvalidAssembly;
+    public long GameSize { get; set; }
+    public long DonorSize { get; set; }
+    public bool IsBcl { get; set; }
+    public bool IsGameOrEngineCode { get; set; }
+    /// <summary>The donor's copy is a more complete BCL than the game's: what the auto-selection checks.</summary>
+    public bool IsRecommended { get; set; }
+
+    /// <summary>Copying a donor's game or engine code swaps in another game, so it is never transplantable.</summary>
+    public bool CanTransplant => DonorExists && Status != AssemblyDiffStatus.InvalidAssembly && !IsGameOrEngineCode;
+    public string Kind => BclAssemblyCatalog.Describe(FileName);
+    public string SizeDisplay => $"{BclAssemblyCatalog.FormatSize(GameSize)} → {BclAssemblyCatalog.FormatSize(DonorSize)}";
+
     [ObservableProperty]
     private bool _isSelectedForTransplant;
     public string Notes { get; set; } = string.Empty;

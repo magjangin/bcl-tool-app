@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
@@ -21,11 +22,15 @@ public partial class GameDiscoveryViewModel : ObservableObject
     private readonly Action<int> _navigate;
     private InstalledGame[] _games = Array.Empty<InstalledGame>();
 
+    /// <summary>Games found by the last scan, reused by the donor search instead of scanning Steam again.</summary>
+    public IReadOnlyList<InstalledGame> Games => _games;
+
     public GameDiscoveryViewModel(AssemblyDiffViewModel diff, LogAnalyzerViewModel log, Action<int> navigate)
     {
         _diff = diff;
         _log = log;
         _navigate = navigate;
+        _diff.KnownGames = () => _games;
     }
 
     [ObservableProperty] private string _searchRoot = string.Empty;
@@ -100,12 +105,14 @@ public partial class GameDiscoveryViewModel : ObservableObject
         finally { IsBusy = false; }
     }
     [RelayCommand]
-    private void UseAsTarget()
+    private async Task UseAsTargetAsync()
     {
         if (!ValidateManaged()) return;
         _diff.GameManagedPath = SelectedGame!.ManagedPath;
-        Status = $"대상 게임 지정: {SelectedGame.Name}";
+        Status = $"대상 게임 지정: {SelectedGame.Name} · 같은 Unity LTS 줄의 도너를 찾는 중…";
         _navigate(2);
+        await _diff.FindDonorCommand.ExecuteAsync(null);
+        Status = $"대상 게임 지정: {SelectedGame.Name} · {_diff.DonorSearchStatus.Split('\n')[0]}";
     }
 
     [RelayCommand]

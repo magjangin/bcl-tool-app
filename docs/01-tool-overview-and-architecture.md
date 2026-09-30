@@ -30,12 +30,15 @@ bcl tool app/
 │   ├── AssemblyDiffItem.cs          # 어셈블리 비교 결과 항목
 │   ├── BclStrippingResult.cs        # 스트리핑 검사 결과 및 열거형 상태
 │   ├── CrashDiagnosisResult.cs      # 로그 진단 결과 및 크래시 분류
+│   ├── DonorCandidate.cs            # 도너 후보 순위 및 BCL 프로파일(Unity·mscorlib)
 │   └── InstalledGame.cs             # 탐색된 게임 인스턴스 정보
 ├── Services/                        # 비즈니스 로직 및 코어 엔진
-│   ├── BclAssemblyInspectorService.cs  # 양쪽 디렉터리 어셈블리 비교 및 심볼 검사
+│   ├── BclAssemblyCatalog.cs           # BCL / 게임·엔진 코드 / NuGet 패키지 이름 분류
+│   ├── BclAssemblyInspectorService.cs  # 양쪽 디렉터리 어셈블리 비교 및 이식 권장 판정
 │   ├── BclStrippingDetectorService.cs  # 17개 표본 API 기반 BCL 스트리핑 정적 검출
 │   ├── BclTransplantService.cs         # 백업 생성, SHA-256 검증 이식 및 롤백/복원
 │   ├── CrashLogAnalyzerService.cs      # MelonLoader/Player.log 정규식 진단 엔진
+│   ├── DonorSearchService.cs           # Unity LTS 줄·mscorlib 온전성 기반 도너 자동 탐색
 │   └── GameDiscoveryService.cs         # Steam 라이브러리 및 Unity 게임 자동 탐색
 ├── ViewModels/                      # MVVM 뷰모델 계층
 │   ├── AssemblyDiffViewModel.cs     # 어셈블리 비교 탭 VM
@@ -51,6 +54,7 @@ bcl tool app/
 │   ├── BclStrippingDetectorTests.cs # 스트리핑 감지 엔진 검증
 │   ├── BugReproTests.cs             # 실환경 재현 버그 회귀 테스트
 │   ├── DiagnosticRegressionTests.cs # 로그 진단기 회귀 테스트
+│   ├── DonorSearchTests.cs          # 도너 자동 탐색 순위·제외 규칙 테스트
 │   ├── GameDiscoveryTests.cs        # 스팀 라이브러리 탐색 테스트
 │   ├── PortingTests.cs              # 이식/백업/복원·롤백 테스트
 │   └── UnitTest1.cs                 # 로그 진단기 기본 분류 테스트
@@ -81,7 +85,7 @@ sequenceDiagram
         Log-->>User: BCL API 누락 진단 및 타깃 어셈블리 제시
     end
 
-    User->>Diff: 대상 게임 및 Donor BCL 폴더 지정 (Donor는 수동 선택)
+    User->>Diff: 대상 게임 지정 (도너는 자동 탐색 후 순위 제시, 직접 입력도 가능)
     Diff-->>User: 누락 DLL 목록 (MissingInGame) 및 버전 비교 표시
     
     User->>Trans: 안전 이식 실행 (ExecuteTransplant)

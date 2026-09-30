@@ -10,19 +10,6 @@ namespace BclToolApp.Services;
 
 public class BclAssemblyInspectorService
 {
-    private static readonly HashSet<string> CriticalBclNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "mscorlib.dll",
-        "System.dll",
-        "System.Core.dll",
-        "netstandard.dll",
-        "System.Xml.dll",
-        "System.Data.dll",
-        "System.Numerics.dll",
-        "System.Runtime.Serialization.dll",
-        "System.IO.Compression.dll"
-    };
-
     public List<AssemblyDiffItem> CompareDirectories(string gameManagedPath, string donorBclPath)
     {
         var result = new List<AssemblyDiffItem>();
@@ -49,7 +36,11 @@ public class BclAssemblyInspectorService
                 FileName = dllName,
                 GameExists = inGame,
                 DonorExists = inDonor,
-                IsCriticalBcl = CriticalBclNames.Contains(dllName)
+                IsCriticalBcl = BclAssemblyCatalog.IsCritical(dllName),
+                IsBcl = BclAssemblyCatalog.IsBcl(dllName),
+                IsGameOrEngineCode = BclAssemblyCatalog.IsGameOrEngineCode(dllName),
+                GameSize = inGame ? BclAssemblyCatalog.SizeOf(gameManagedPath, dllName) : 0,
+                DonorSize = inDonor ? BclAssemblyCatalog.SizeOf(donorBclPath, dllName) : 0
             };
 
             string gameFilePath = Path.Combine(gameManagedPath, dllName);
@@ -78,7 +69,10 @@ public class BclAssemblyInspectorService
             {
                 item.Status = AssemblyDiffStatus.MissingInGame;
                 item.IsSelectedForTransplant = false;
-                item.Notes = item.IsCriticalBcl ? "⚠️ 필수 BCL 어셈블리 부재! 이식 추천" : "추가 의존성 BCL";
+                // Most donor-only DLLs are the donor game's own dependencies, not BCL the target is missing.
+                item.Notes = item.IsCriticalBcl ? "⚠️ 핵심 BCL이 게임에 없습니다. 모드가 필요로 하면 추가하세요."
+                    : item.IsBcl ? "게임에 없는 BCL (프로파일 차이일 수 있음)"
+                    : $"도너 전용 파일 · {item.Kind} · 이식 대상 아님";
             }
             else if (inGame && !inDonor)
             {
@@ -109,10 +103,24 @@ public class BclAssemblyInspectorService
                 }
             }
 
+            // A stripped BCL is smaller than the intact one; that is the signal the transplant reverses.
+            item.IsRecommended = item.IsBcl && inGame && inDonor && item.DonorSize > item.GameSize &&
+                item.Status is AssemblyDiffStatus.ContentMismatch or AssemblyDiffStatus.VersionMismatch;
+            if (item.IsRecommended)
+                item.Notes = $"✅ 이식 권장 · 게임 쪽이 {item.DonorSize - item.GameSize:N0}바이트 작습니다 · " + item.Notes;
+            else if (item.IsGameOrEngineCode && item.Status is AssemblyDiffStatus.ContentMismatch or AssemblyDiffStatus.VersionMismatch)
+                item.Notes = "⛔ 게임/엔진 코드 · 이식하면 다른 게임의 코드로 덮어씁니다";
+
             result.Add(item);
         }
 
-        return result;
+        // What the user has to act on first: the BCL the transplant exists for, not the donor's own DLLs.
+        return result
+            .OrderByDescending(x => x.IsRecommended)
+            .ThenByDescending(x => x.IsCriticalBcl)
+            .ThenByDescending(x => x.IsBcl)
+            .ThenBy(x => x.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public (bool Found, string Details) CheckMemberExistsInAssembly(string assemblyPath, string searchTarget)

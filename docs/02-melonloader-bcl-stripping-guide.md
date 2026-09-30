@@ -57,7 +57,7 @@ MelonLoader는 게임이 실행될 때 주입(Injection)되어 동작하며 다�
 
 스트리핑된 게임에 이식할 정상 BCL("Donor")을 선택할 때는 아래 원칙을 지켜야 합니다.
 
-> 앱에는 아직 도너를 자동으로 찾는 기능이 없습니다. [스트리핑 게임 감지] 탭의 "비교용 Donor로 지정"은 선택한 게임의 `Managed` 폴더를 그대로 지정할 뿐이므로, 아래 기준은 사람이 직접 확인해야 합니다.
+> [BCL 어셈블리 비교] 탭의 **[🔎 도너 자동 찾기]**(그리고 [스트리핑 게임 감지] 탭의 "대상 지정 + 도너 자동 찾기")가 아래 1)~2) 기준을 자동으로 적용해 후보 순위를 만듭니다(`DonorSearchService`). 같은 LTS 줄 후보만 경로에 자동으로 채우며, 다른 줄이나 Unity 버전을 못 읽은 후보는 목록에만 표시합니다. 엔진 호환성 자체는 검증하지 못하므로 3)~4)와 최종 판단은 여전히 사람 몫입니다. "비교용 Donor로 지정"은 예전처럼 선택한 게임의 `Managed` 폴더를 그대로 지정하기만 합니다.
 
 ### 1) 같은 Unity LTS 줄의 가까운 패치 버전
 * Unity 버전은 게임 폴더의 `UnityPlayer.dll` 파일 버전(속성 → 자세히 → 제품 버전)으로 확인합니다.
@@ -75,12 +75,15 @@ MelonLoader는 게임이 실행될 때 주입(Injection)되어 동작하며 다�
 ### 2) 도너 mscorlib이 온전한지 확인
 * 먼저 `Module.GetPEKind`가 있는지 봅니다. 없으면 도너도 스트리핑된 것입니다.
 * **`GetPEKind`가 있어도 온전하다는 보장은 없습니다.** Neon Abyss와 엔진 바이너리가 완전히 같은 Mask of Mists의 mscorlib(3,901,440바이트)은 `GetPEKind`는 있지만 One Step From Eden의 mscorlib(4,069,888바이트)보다 메서드가 926개 적습니다. 약하게 스트리핑된 빌드로 보입니다. 후보가 여럿이면 **파일이 가장 크고 메서드 수가 가장 많은 mscorlib**을 고릅니다.
+* 그래서 자동 탐색은 **온전성을 패치 거리보다 먼저** 봅니다: 같은 줄 후보 중 메서드 수가 최대치의 99%에 못 미치면 순위를 내리고 이유를 표시합니다. 2026-09-30 실측(설치된 Mono 게임 671개)에서 Neon Abyss(2018.4.21)의 1순위는 같은 버전의 Mask of Mists가 아니라 Deep Sky Derelicts(2018.4.20, 26,114개)였고 Mask of Mists(25,180개)는 최하위로 내려갔습니다. Zombie Rollerz(2019.4.27)는 실제로 성공했던 도너 Deadly Days(2019.4.26)가 상위 2개 안에 들었습니다(1순위 Boyfriend Dungeon 2019.4.28은 mscorlib 바이트·메서드 수가 Deadly Days와 동일).
 
 ### 3) mscorlib를 포함해 Managed 폴더 전체를 비교
 * 모드로더 크래시의 원인은 대부분 mscorlib에 있으므로(2장 참고), mscorlib 교체가 핵심입니다. `System.Core.dll`만 바꾸면 해결되지 않고, 온전한 System.Core가 잘린 mscorlib의 API를 찾지 못해 다른 오류가 날 수도 있습니다.
 * 그만큼 **mscorlib는 엔진과 맞는 도너에서만** 가져와야 합니다. `System.Object`, `System.String` 등 런타임 ABI의 근간이라 엔진이 맞지 않으면 게임이 켜지지 않을 수 있습니다.
 * 기본 6종(`mscorlib`, `System`, `System.Core`, `System.Xml`, `System.Configuration`, `Mono.Security`)만 보고 끝내지 말고 `Managed` 폴더 전체를 도너와 파일 크기로 비교합니다. Neon Abyss는 `System.Data`, `System.Xml.Linq`, `System.Numerics`까지 잘려 있어 9개를 교체했습니다.
-* 도너 게임의 `Assembly-CSharp.dll`, `UnityEngine.*.dll`, 게임 전용 플러그인은 절대 가져오지 않습니다. 비교 탭은 이 파일들도 체크할 수 있으니 주의하세요.
+  [권장 BCL 자동 선택]이 이 비교를 대신합니다: **BCL 이름이면서 도너 쪽 파일이 더 큰 것**만 체크합니다. 실측(Saga of Yurina, Unity 6000.3.14f1 → 도너 Cozy Marbles)에서 `mscorlib`(2,729,472→4,632,064), `System`, `System.Core`, `System.Xml`, `System.Configuration`, `System.Numerics`, `System.Runtime.Serialization`, `System.Net.Http`, `Mono.Security` 9개가 자동으로 잡혔습니다.
+* 도너 게임의 `Assembly-CSharp.dll`, `UnityEngine.*.dll`, 게임 전용 플러그인은 절대 가져오지 않습니다. 이제 이 파일들은 체크 자체가 막혀 있고, 도너 게임이 동봉한 NuGet 패키지(`System.Memory.dll`, `System.Text.Json.dll` 등)도 BCL로 취급하지 않습니다.
+* **게임에 아예 없는 핵심 BCL**(위 사례의 `netstandard`, `System.Data`, `System.IO.Compression`, `System.Xml.Linq`)은 자동 선택하지 않고 목록에만 알립니다. 모드가 그 어셈블리를 찾는 크래시가 날 때만 직접 체크하세요.
 
 ### 4) 참조 어셈블리(Reference Assembly) 절대 금지
 * Visual Studio SDK 폴더(예: `C:\Program Files (x86)\Reference Assemblies\...`)의 DLL은 컴파일 타임용 메타데이터만 들어있고 실제 메서드 바디(IL 코드)가 비어있습니다.
