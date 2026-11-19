@@ -6,7 +6,7 @@
 
 [![.NET 8.0](https://img.shields.io/badge/.NET-8.0%20LTS-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Avalonia UI 12](https://img.shields.io/badge/Avalonia%20UI-12.0-purple?logo=avalonia)](https://avaloniaui.net/)
-[![Tests](https://img.shields.io/badge/Tests-99%20passed-brightgreen)](#-검증-및-테스트)
+[![Tests](https://img.shields.io/badge/Tests-105%20passed-brightgreen)](#-검증-및-테스트)
 
 Unity 게임 모딩(MelonLoader, BepInEx 등) 시 Unity의 **관리 코드 스트리핑(Managed Code Stripping)**으로 인해 발생하는 BCL(Base Class Library: `mscorlib.dll`, `System.Core.dll` 등) 결손 및 모드로더 부트스트랩 실패/크래시를 오프라인에서 안전하게 탐지, 진단, 복구(이식)하는 크로스플랫폼 GUI 데스크톱 도구입니다.
 
@@ -42,7 +42,7 @@ Unity 게임 모딩(MelonLoader, BepInEx 등) 시 Unity의 **관리 코드 스�
 - 기증 게임의 정상 BCL DLL을 대상 게임에 안전하게 복사/이식합니다.
 - 이식 전 대상 게임의 원본 상태를 메타데이터와 함께 자동 백업합니다.
 - 이식 과정 중 오류 발생 시 즉시 이전 상태로 자동 롤백하며, 원클릭으로 원본 복원이 가능합니다.
-- 기존 파일을 교체한 이식은 교체한 파일만 되돌리고 새로 추가한 DLL은 지워, 이식 후 스팀 업데이트로 바뀐 게임 코드(`Assembly-CSharp.dll` 등)를 건드리지 않습니다. 파일을 추가만 한 이식은 아직 예외입니다([알려진 문제](docs/05-known-issues-and-improvements.md)).
+- 이식 백업은 실제로 교체한 파일만 되돌리고 새로 추가한 DLL만 제거해(파일을 추가만 한 이식 포함), 이식 후 스팀 업데이트로 바뀐 게임 코드(`Assembly-CSharp.dll` 등)를 건드리지 않습니다.
 
 ---
 
@@ -54,7 +54,7 @@ Unity 게임 모딩(MelonLoader, BepInEx 등) 시 Unity의 **관리 코드 스�
 | **UI 프레임워크** | **Avalonia UI 12** | 크로스플랫폼 XAML 데스크톱 UI (Fluent Theme) |
 | **MVVM 패턴** | **CommunityToolkit.Mvvm** | `[ObservableProperty]`, `[RelayCommand]` 기반 클린 아키텍처 |
 | **정적 분석 엔진** | **Mono.Cecil 0.11.6** | 게임 실행 없는 PE 어셈블리 메타데이터 분석 |
-| **단위 테스트** | **xUnit + Avalonia.Headless** | 비헤드리스 단위 테스트 및 UI 헤드리스 세션 테스트 (99개 테스트) |
+| **단위 테스트** | **xUnit + Avalonia.Headless** | 비헤드리스 단위 테스트 및 UI 헤드리스 세션 테스트 (105개 테스트) |
 
 ---
 
@@ -74,7 +74,7 @@ cd bcl-tool-app
 dotnet build BclToolApp.sln -c Release
 ```
 
-### 3. 테스트 실행 (99개 테스트 All-Green)
+### 3. 테스트 실행 (105개 테스트 All-Green)
 ```powershell
 dotnet test BclToolApp.sln -p:UsedAvaloniaProducts= -v:minimal
 ```

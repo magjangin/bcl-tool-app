@@ -2,7 +2,7 @@
 
 ## 1. 해결된 재현 테스트 (10건)
 
-`BclToolApp.Tests/BugReproTests.cs`에 실제 스팀 라이브러리와 모딩 환경에서 모은 엣지 케이스 10건이 테스트로 들어 있고, 모두 해결되어 통과합니다. 전체 테스트는 99개이며 모두 통과합니다(2026-09-30, 도너 자동 탐색 및 자동 준비 테스트 21개 추가).
+`BclToolApp.Tests/BugReproTests.cs`에 실제 스팀 라이브러리와 모딩 환경에서 모은 엣지 케이스와 회귀 테스트가 들어 있고, 모두 해결되어 통과합니다. 전체 테스트는 105개이며 모두 통과합니다(2026-11-20, 복원/로그 분석/탐색/성능 회귀 테스트 6건 추가 및 경고 0개 달성).
 
 | 번호 | 테스트 명칭 | 원래 현상 | 해결 방식 |
 |:---:|---|---|---|
@@ -42,24 +42,34 @@
 
 ---
 
-## 4. 확인 필요 (알려진 문제, 미수정)
+## 4. 2026-11-20 개선 및 병목 해결에서 고친 것
+
+| 영역 | 원래 현상 | 수정 |
+|---|---|---|
+| 복원 안전성 | 파일을 추가만 한 이식(`ReplacedFiles`가 비고 `AddedFiles`만 있음)을 복원하면 `Files` 전체를 덮어써, 이식 후 스팀 업데이트로 바뀐 게임 코드까지 되돌림 | `AddedFiles` 또는 `ReplacedFiles`가 하나라도 있으면 이식 백업으로 판별해 추가된 DLL만 제거하고 교체 파일만 복원 (`BclTransplantService.RestoreBackup`) |
+| 로그 분석 (.NET 10+) | `Version=[5-9]\.` 정규식이 `Version=10.0.0.0` 이상을 걸러내지 못함 | `Version=(?:[5-9]\|[1-9]\d+)\.`으로 확장하여 .NET 5+ 전체 제외 (`CrashLogAnalyzerService.HasBclEvidence`) |
+| 로그 분석 우선순위 | 앞쪽의 무해한/판단 보류 예외(`FileLoadException` 등)가 뒤쪽의 실제 BCL 결손(`MissingMethodException`, `VTableSetup`)을 가림 | 모든 매칭 후보에 우선순위(BCL 결손 > 게임/ABI/네이티브 > 부트스트랩 > 판단 보류)를 적용해 결정적 원인을 선택 (`CrashLogAnalyzerService.Analyze`) |
+| 게임 탐색 | `*_Data` 빈 폴더만 남은 삭제된 게임 잔여 폴더가 "BCL 파일 누락"으로 목록에 표시됨 | `Managed`, IL2CPP 메타데이터, `UnityPlayer.dll`, `*.exe`가 모두 없으면 잔여 폴더로 간주해 제외 (`GameDiscoveryService.InspectGame`) |
+| UI 문구 | 헤더가 "Unity / IL2CPP 모드로더 BCL 스트리핑 진단"으로 되어 있어 Mono 전용 범위와 어긋남 | "Unity Mono 모드로더 BCL 스트리핑 진단 및 안전 이식 도우미"로 정정 (`Views/MainWindow.axaml`) |
+| 성능: 로그 꼬리 읽기 | `ReadLogTail`이 파일 처음부터 끝까지 읽으며 매 청크마다 앞부분을 삭제해 O(N²) 병목 발생 | `stream.CanSeek` 시 파일 끝에서 `maxCharacters * 4 + 4096`바이트만 seek하여 UTF-8 문자 경계를 맞춰 읽는 O(maxCharacters) 방식으로 전환 (`GameDiscoveryService.ReadLogTail`) |
+| 성능: 디렉터리 비교 | `CompareDirectories`가 순차 실행 + `ReadingMode.Immediate` + 크기가 다른 파일에도 SHA-256 계산 | `ReadingMode.Deferred`, 파일 크기 불일치 시 SHA-256 생략, `Parallel.For` 병렬 분석 적용 (`BclAssemblyInspectorService`) |
+| 성능: 대량 게임 스캔 | `GameDiscoveryViewModel.DiscoverAsync`가 배치 내 게임을 단일 스레드로 순차 검사 | Thread-safe한 `BclStrippingDetectorService`를 `Parallel.For`(최대 8스레드)로 병렬 실행 (`GameDiscoveryViewModel.DiscoverAsync`) |
+| 빌드 품질 | `BugReproTests.cs`의 `xUnit1031` 동기 블로킹 경고 | `async Task` + `await session.Dispatch(...)`로 정리해 빌드 경고 0개 달성 |
+
+---
+
+## 5. 확인 필요 (남은 알려진 문제, 미수정)
 
 | 번호 | 영역 | 문제 | 위치 |
 |:---:|---|---|---|
 | **1** | 도너 선택 | 도너 자동 탐색은 mscorlib만 검사합니다. 도너의 `System.Core.dll` 등 나머지 BCL이 잘려 있어도 후보로 올라오며, 엔진(`mono-2.0-bdwgc.dll`) 호환성은 검증하지 않습니다(같은 LTS 줄이라는 근거만 씁니다). "비교용 Donor로 지정" 버튼은 여전히 아무 검사 없이 경로만 넘깁니다 | `DonorSearchService`, `GameDiscoveryViewModel.UseAsDonor` |
 | **2** | 자동 선택 | 권장 기준이 "도너 쪽 파일이 더 크다"입니다. 크기가 같거나 작으면서 특정 API만 잘린 경우는 놓칩니다. 게임에 없는 핵심 BCL은 목록에만 알리고 자동 선택하지 않습니다 | `BclAssemblyInspectorService.CompareDirectories` |
 | **3** | 감지·비교 | 수동 이식 때 남긴 `.dll.orig` 원본을 읽지 않아, 이미 이식한 게임의 원래 상태를 앱에서 확인할 수 없습니다 | `BclStrippingDetectorService`, `BclAssemblyInspectorService` |
-| **4** | 복원 | 파일을 추가만 한 이식은 `ReplacedFiles`가 비어 있어, 복원 시 `Files`의 모든 최상위 파일을 백업 시점으로 되돌립니다. 이식 후 스팀 업데이트로 바뀐 파일까지 덮어씁니다. 공개 `CreateBackup`으로 만든 전체 백업과 구분하지 못하는 것이 원인입니다 | `BclTransplantService.RestoreBackup` |
-| **5** | 게임 탐색 | `*_Data` 폴더만 있어도 게임으로 인식해, 삭제된 게임의 잔여 폴더가 목록에 뜹니다. In Falsus Demo 잔여 폴더가 "BCL 파일 누락"으로 표시됩니다 | `GameDiscoveryService.InspectGame` |
-| **6** | 진단 범위 | 게임에 번들된 서드파티 DLL(예: `ZString.dll`)이 잘린 경우를 진단하지 않습니다. 감지기는 mscorlib·System.Core만 보고, 로그 분석기는 `System.*`이 아닌 VTable 오류를 판단 보류로 둡니다. `Invalid type ... for instance field` 형식은 인식하지 않습니다 | `BclStrippingDetectorService`, `CrashLogAnalyzerService` |
-| **7** | 로그 분석 | 로그 전체에서 처음 일치하는 줄 하나만 봅니다. 앞쪽의 무해한 예외가 진짜 원인을 가릴 수 있습니다 | `CrashLogAnalyzerService.Analyze` |
-| **8** | 성능 | 로그 꼬리 읽기가 파일 전체를 읽으며 매번 앞부분을 지웁니다. 수백 MB 로그에서 느립니다 | `GameDiscoveryService.ReadLogTail` |
-| **9** | 화면 | 헤더 문구가 "Unity / IL2CPP 모드로더 BCL 스트리핑 진단"이지만 BCL 검사는 Mono 전용입니다 | `MainWindow.axaml` |
-| **10** | 로그 분석 | .NET 5+ 어셈블리 제외 규칙이 `Version=[5-9]\.` 정규식이라 `Version=10.0.0.0` 이상은 걸러지지 않습니다. .NET 10으로 빌드한 모드의 `System.Runtime, Version=10.0.0.0` 오류가 BCL 이식 후보로 잘못 분류될 수 있습니다 | `CrashLogAnalyzerService.HasBclEvidence` |
+| **4** | 진단 범위 | 게임에 번들된 서드파티 DLL(예: `ZString.dll`)이 잘린 경우를 진단하지 않습니다. 감지기는 mscorlib·System.Core만 보고, 로그 분석기는 `System.*`이 아닌 VTable 오류를 판단 보류로 둡니다. `Invalid type ... for instance field` 형식은 인식하지 않습니다 | `BclStrippingDetectorService`, `CrashLogAnalyzerService` |
 
 ---
 
-## 5. 향후 아키텍처 및 UI/UX 개선 로드맵
+## 6. 향후 아키텍처 및 UI/UX 개선 로드맵
 
 ### 🔎 도너 자동 탐색 (구현됨 · `DonorSearchService`)
 * 같은 Unity LTS 줄에서 패치가 가까운 게임과 Unity 에디터 Mono 프로파일을 후보로 모아, `Module.GetPEKind`가 살아 있고 mscorlib 메서드가 가장 많은 것을 우선 제시합니다. `mono-2.0-bdwgc.dll` 크기 일치는 같은 엔진을 뜻하지 않으므로 기준으로 쓰지 않습니다.
