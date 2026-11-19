@@ -74,6 +74,26 @@ public sealed class BugReproTests : IDisposable
     }
 
     [Theory]
+    [InlineData("10.0.0.0")]
+    [InlineData("12.0.0.0")]
+    public void ModBuiltForNet10OrHigherIsNotTransplantCandidate(string version)
+    {
+        var result = analyzer.Analyze($"System.TypeLoadException: Could not load type 'System.Runtime.CompilerServices.Unsafe' from assembly 'System.Runtime, Version={version}, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a'.");
+        Assert.False(result.IsBclTransplantCandidate);
+    }
+
+    [Fact]
+    public void BenignEarlierExceptionDoesNotMaskLaterBclCrash()
+    {
+        var log =
+            "[00:00:01.000] [WARN] System.IO.FileLoadException: Could not load file or assembly 'OptionalPlugin, Version=1.0.0.0'\n" +
+            "[00:00:02.000] [ERROR] System.TypeLoadException: VTable setup of type System.Reflection.DelegatingTypeInfo failed\n";
+        var result = analyzer.Analyze(log);
+        Assert.True(result.IsBclTransplantCandidate, $"Category={result.Category}, Summary={result.Summary}");
+        Assert.Equal("System.Reflection.DelegatingTypeInfo", result.TargetMember);
+    }
+
+    [Theory]
     // Real MelonLoader failure on a stripped mscorlib.
     [InlineData("[12:00:00.000] [ERROR] System.TypeLoadException: VTable setup of type System.Reflection.DelegatingTypeInfo failed")]
     // Mono also nests it inside a field load failure.
@@ -172,6 +192,27 @@ public sealed class BugReproTests : IDisposable
     }
 
     [Fact]
+    public void RestoreAfterAddOnlyTransplantDoesNotRevertFilesChangedLater()
+    {
+        var game = Path.Combine(root, "ManagedAddOnly");
+        var donor = Path.Combine(root, "DonorAddOnly");
+        Dll(game, "Assembly-CSharp.dll", version: 1);
+        Dll(donor, "System.Data.dll", version: 4);
+        var service = new BclTransplantService();
+        var result = service.ExecuteTransplant(donor, game, new[] { "System.Data.dll" }, true);
+        Assert.True(result.Success, result.LogSummary);
+        Assert.True(File.Exists(Path.Combine(game, "System.Data.dll")));
+
+        // Simulate a Steam update modifying game code after the add-only transplant.
+        Dll(game, "Assembly-CSharp.dll", version: 2);
+        var updated = File.ReadAllBytes(Path.Combine(game, "Assembly-CSharp.dll"));
+
+        Assert.True(service.RestoreBackup(result.BackupPath, game, out var error), error);
+        Assert.False(File.Exists(Path.Combine(game, "System.Data.dll")));
+        Assert.Equal(updated, File.ReadAllBytes(Path.Combine(game, "Assembly-CSharp.dll")));
+    }
+
+    [Fact]
     public void RollbackAfterUnbackedSecondTransplantDoesNotLeaveMixedState()
     {
         var game = Path.Combine(root, "Managed");
@@ -241,12 +282,12 @@ public sealed class BugReproTests : IDisposable
     // ---------- UI ----------
 
     [Fact]
-    public void SelectedGameSurvivesListRefreshInRealListBox()
+    public async Task SelectedGameSurvivesListRefreshInRealListBox()
     {
         foreach (var name in new[] { "Alpha", "Beta" }) // empty Managed -> MissingFiles -> shown by default
             Directory.CreateDirectory(Path.Combine(root, "steamapps", "common", name, name + "_Data", "Managed"));
         using var session = HeadlessUnitTestSession.StartNew(typeof(HeadlessTestApp));
-        var (before, afterRecheck, afterSearch) = session.Dispatch(async () =>
+        var (before, afterRecheck, afterSearch) = await session.Dispatch(async () =>
         {
             var vm = new MainWindowViewModel().GameDiscovery;
             vm.SearchRoot = root;
@@ -268,10 +309,31 @@ public sealed class BugReproTests : IDisposable
             var searched = vm.SelectedGame?.Name;
             window.Close();
             return (selected, rechecked, searched);
-        }, CancellationToken.None).GetAwaiter().GetResult();
+        }, CancellationToken.None);
         Assert.Equal("Alpha", before);
         Assert.Equal("Alpha", afterRecheck);
         Assert.Equal("Alpha", afterSearch);
+    }
+
+    [Fact]
+    public void LeftoverDataDirectoryWithoutExecutableOrManagedIsIgnored()
+    {
+        var leftover = Path.Combine(root, "steamapps", "common", "UninstalledDemo");
+        Directory.CreateDirectory(Path.Combine(leftover, "UninstalledDemo_Data"));
+        Assert.Null(new GameDiscoveryService().InspectGame(leftover));
+    }
+
+    [Fact]
+    public void ReadLogTailHandlesLargeUtf8LogWithSeek()
+    {
+        var logPath = Path.Combine(root, "large.log");
+        var padding = new string('가', 10_000) + "\n";
+        var marker = "FINAL_CRASH_LINE_한글_END";
+        File.WriteAllText(logPath, padding + padding + marker, System.Text.Encoding.UTF8);
+
+        var tail = new GameDiscoveryService().ReadLogTail(logPath, 50);
+        Assert.Equal(50, tail.Length);
+        Assert.EndsWith(marker, tail);
     }
 
     public void Dispose()

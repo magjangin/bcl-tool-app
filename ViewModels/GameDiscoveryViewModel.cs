@@ -68,14 +68,23 @@ public partial class GameDiscoveryViewModel : ObservableObject
             SelectedGame = null;
             ApplyFilter();
             int completed = 0;
-            foreach (var batch in _games.Chunk(12))
+            var parallelOptions = new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8),
+                CancellationToken = cancellationToken
+            };
+            foreach (var batch in _games.Chunk(24))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var reports = await Task.Run(() => batch.Select(g =>
+                var reports = await Task.Run(() =>
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    return _detector.Inspect(g);
-                }).ToArray(), cancellationToken);
+                    var results = new BclStrippingResult[batch.Length];
+                    Parallel.For(0, batch.Length, parallelOptions, i =>
+                    {
+                        results[i] = _detector.Inspect(batch[i]);
+                    });
+                    return results;
+                }, cancellationToken);
                 for (int i = 0; i < batch.Length; i++) batch[i].Stripping = reports[i];
                 completed += batch.Length;
                 ApplyFilter();

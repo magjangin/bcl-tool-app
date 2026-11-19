@@ -24,7 +24,7 @@
                     <TextBlock Text="🛠️" FontSize="22" VerticalAlignment="Center"/>
                     <StackPanel>
                         <TextBlock Text="BCL Porting &amp; Mod Crash Assistant" FontSize="16" FontWeight="Bold" Foreground="#CDD6F4"/>
-                        <TextBlock Text="Unity / IL2CPP 모드로더 BCL 스트리핑 진단 및 안전 이식 도우미" FontSize="11" Foreground="#A6ADC8"/>
+                        <TextBlock Text="Unity Mono 모드로더 BCL 스트리핑 진단 및 안전 이식 도우미" FontSize="11" Foreground="#A6ADC8"/>
                     </StackPanel>
                 </StackPanel>
                 <TextBlock Grid.Column="2" Text=".NET 8 / Mono.Cecil 기반 무결성 분석" FontSize="11" Foreground="#6C7086" VerticalAlignment="Center"/>

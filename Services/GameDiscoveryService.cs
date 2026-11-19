@@ -150,6 +150,10 @@ public sealed class GameDiscoveryService
         var managed = data.Select(d => Path.Combine(d, "Managed")).Where(Directory.Exists).ToArray();
         bool il2cpp = File.Exists(Path.Combine(path, "GameAssembly.dll")) ||
             data.Any(d => File.Exists(Path.Combine(d, "il2cpp_data", "Metadata", "global-metadata.dat")));
+        bool hasPlayerOrExe = File.Exists(Path.Combine(path, "UnityPlayer.dll")) ||
+            Directory.EnumerateFiles(path, "*.exe").Any();
+        // Leftover *_Data folders from uninstalled games have no Managed folder, IL2CPP metadata, or executable.
+        if (managed.Length == 0 && !il2cpp && !hasPlayerOrExe) return null;
         var loaders = new[] { "MelonLoader", "BepInEx" }.Where(n => Directory.Exists(Path.Combine(path, n))).ToArray();
         var logs = new List<string>();
         foreach (var relative in new[] { "MelonLoader/Latest.log", "BepInEx/LogOutput.log", "Player.log" })
@@ -196,16 +200,33 @@ public sealed class GameDiscoveryService
     {
         if (maxCharacters <= 0) throw new ArgumentOutOfRangeException(nameof(maxCharacters));
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        using var reader = new StreamReader(stream);
+        if (stream.CanSeek)
+        {
+            // UTF-8 uses at most 4 bytes per BMP/supplementary character; seek near the tail so multi-hundred-MB logs stay O(maxCharacters).
+            long windowBytes = Math.Min(stream.Length, (long)maxCharacters * 4L + 4096L);
+            if (stream.Length > windowBytes)
+            {
+                stream.Seek(-windowBytes, SeekOrigin.End);
+                // Advance past any UTF-8 continuation bytes (10xxxxxx) so we land on a clean character boundary.
+                int b;
+                while ((b = stream.ReadByte()) != -1 && (b & 0xC0) == 0x80) { }
+                if (b != -1) stream.Seek(-1, SeekOrigin.Current);
+            }
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            var text = reader.ReadToEnd();
+            return text.Length > maxCharacters ? text[^maxCharacters..] : text;
+        }
+
+        using var fallbackReader = new StreamReader(stream);
         var tail = new System.Text.StringBuilder();
         var buffer = new char[8192];
         int count;
-        while ((count = reader.Read(buffer, 0, buffer.Length)) > 0)
+        while ((count = fallbackReader.Read(buffer, 0, buffer.Length)) > 0)
         {
             tail.Append(buffer, 0, count);
-            if (tail.Length > maxCharacters) tail.Remove(0, tail.Length - maxCharacters);
+            if (tail.Length > maxCharacters * 2) tail.Remove(0, tail.Length - maxCharacters);
         }
-        return tail.ToString();
+        return tail.Length > maxCharacters ? tail.ToString(tail.Length - maxCharacters, maxCharacters) : tail.ToString();
     }
 }
 

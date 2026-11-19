@@ -182,8 +182,13 @@ public class BclTransplantService
                 string.Equals(backup, target, PathComparison))
                 throw new IOException("이 백업의 원래 게임 경로와 복원 대상이 다릅니다.");
             var restore = new Dictionary<string, byte[]?>();
-            var filesToRestore = (manifest.ReplacedFiles != null && manifest.ReplacedFiles.Count > 0)
-                ? manifest.ReplacedFiles
+            // A transplant backup always records AddedFiles and/or ReplacedFiles; only restore files that were actually
+            // replaced so Steam updates after an add-only transplant are not overwritten. Public CreateBackup snapshots
+            // leave both lists empty and restore all top-level files.
+            bool isTransplantBackup = (manifest.ReplacedFiles != null && manifest.ReplacedFiles.Count > 0)
+                || (manifest.AddedFiles != null && manifest.AddedFiles.Count > 0);
+            var filesToRestore = isTransplantBackup
+                ? (manifest.ReplacedFiles ?? new List<string>())
                 : manifest.Files.Keys.ToList();
 
             foreach (var key in filesToRestore)
@@ -198,7 +203,7 @@ public class BclTransplantService
                     throw new IOException($"백업 무결성 검증 실패: {key}");
                 restore.Add(key, bytes);
             }
-            foreach (var name in manifest.AddedFiles)
+            foreach (var name in manifest.AddedFiles ?? Enumerable.Empty<string>())
             {
                 if (!IsFileName(name) || !name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || restore.ContainsKey(name))
                     throw new IOException("잘못된 추가 파일 기록입니다.");

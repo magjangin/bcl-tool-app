@@ -64,38 +64,36 @@ public class CrashLogAnalyzerService
         }
 
         string[] lines = logContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-        int crashLineIndex = -1;
-        Match? matchedRegex = null;
-        string matchedType = string.Empty;
+        // 1. 결정적 예외 라인 탐색 (앞쪽의 무해한/판단 보류 예외가 뒤쪽의 실제 BCL 결손을 가리지 않도록 우선순위 적용)
+        CrashDiagnosisResult? bestResult = null;
+        int bestRank = -1;
 
-        // 1. 순차적으로 최초의 결정적 예외 라인 탐색
         for (int i = 0; i < lines.Length; i++)
         {
             string line = lines[i];
+            if (!TryMatchCrashLine(line, out var matchedType, out var matchedRegex))
+                continue;
 
-            var mm = MissingMethodRegex.Match(line);
-            if (mm.Success) { crashLineIndex = i; matchedRegex = mm; matchedType = "MissingMethodException"; break; }
+            int startLine = Math.Max(0, i - 15);
+            int endLine = Math.Min(lines.Length - 1, i + 25);
+            string context = ExtractContext(lines, startLine, endLine);
 
-            var vt = VTableSetupRegex.Match(line);
-            if (vt.Success) { crashLineIndex = i; matchedRegex = vt; matchedType = "VTableSetup"; break; }
+            var candidate = ClassifyCrash(matchedType, matchedRegex!, line, context);
+            if (candidate.IsBclTransplantCandidate && !string.IsNullOrWhiteSpace(gameManagedPath) && Directory.Exists(gameManagedPath))
+            {
+                CheckGameProfileCompatibility(candidate, gameManagedPath);
+            }
 
-            var tl = TypeLoadRegex.Match(line);
-            if (tl.Success) { crashLineIndex = i; matchedRegex = tl; matchedType = "TypeLoadException"; break; }
-
-            var fn = FileNotFoundRegex.Match(line);
-            if (fn.Success) { crashLineIndex = i; matchedRegex = fn; matchedType = line.Contains("FileLoadException", StringComparison.OrdinalIgnoreCase) ? "FileLoadException" : "FileNotFoundException"; break; }
-
-            var bi = BadImageRegex.Match(line);
-            if (bi.Success) { crashLineIndex = i; matchedRegex = bi; matchedType = "BadImageFormatException"; break; }
-
-            var nc = NativeCrashRegex.Match(line);
-            if (nc.Success) { crashLineIndex = i; matchedRegex = nc; matchedType = "NativeCrash"; break; }
-
-            var lb = LoaderBootstrapRegex.Match(line);
-            if (lb.Success) { crashLineIndex = i; matchedRegex = lb; matchedType = "LoaderBootstrap"; break; }
+            int rank = GetDiagnosisPriority(candidate);
+            if (rank > bestRank)
+            {
+                bestResult = candidate;
+                bestRank = rank;
+                if (bestRank >= 3) break; // BCL 결손/누락 등 최우선 결정적 원인을 찾으면 즉시 종료
+            }
         }
 
-        if (crashLineIndex == -1)
+        if (bestResult == null)
         {
             return new CrashDiagnosisResult
             {
@@ -107,19 +105,50 @@ public class CrashLogAnalyzerService
             };
         }
 
-        // 앞뒤 25줄 문맥 추출
-        int startLine = Math.Max(0, crashLineIndex - 15);
-        int endLine = Math.Min(lines.Length - 1, crashLineIndex + 25);
-        string context = ExtractContext(lines, startLine, endLine);
-
-        // 2. 예외 세부 정보 및 카테고리 판정
-        var result = ClassifyCrash(matchedType, matchedRegex!, lines[crashLineIndex], context);
-        if (result.IsBclTransplantCandidate && !string.IsNullOrWhiteSpace(gameManagedPath) && Directory.Exists(gameManagedPath))
-        {
-            CheckGameProfileCompatibility(result, gameManagedPath);
-        }
-        return result;
+        return bestResult;
     }
+
+    private static bool TryMatchCrashLine(string line, out string matchedType, out Match? matchedRegex)
+    {
+        var mm = MissingMethodRegex.Match(line);
+        if (mm.Success) { matchedRegex = mm; matchedType = "MissingMethodException"; return true; }
+
+        var vt = VTableSetupRegex.Match(line);
+        if (vt.Success) { matchedRegex = vt; matchedType = "VTableSetup"; return true; }
+
+        var tl = TypeLoadRegex.Match(line);
+        if (tl.Success) { matchedRegex = tl; matchedType = "TypeLoadException"; return true; }
+
+        var fn = FileNotFoundRegex.Match(line);
+        if (fn.Success)
+        {
+            matchedRegex = fn;
+            matchedType = line.Contains("FileLoadException", StringComparison.OrdinalIgnoreCase)
+                ? "FileLoadException" : "FileNotFoundException";
+            return true;
+        }
+
+        var bi = BadImageRegex.Match(line);
+        if (bi.Success) { matchedRegex = bi; matchedType = "BadImageFormatException"; return true; }
+
+        var nc = NativeCrashRegex.Match(line);
+        if (nc.Success) { matchedRegex = nc; matchedType = "NativeCrash"; return true; }
+
+        var lb = LoaderBootstrapRegex.Match(line);
+        if (lb.Success) { matchedRegex = lb; matchedType = "LoaderBootstrap"; return true; }
+
+        matchedRegex = null;
+        matchedType = string.Empty;
+        return false;
+    }
+
+    private static int GetDiagnosisPriority(CrashDiagnosisResult result) => result.Category switch
+    {
+        CrashCategory.BclMissingAssembly or CrashCategory.BclStrippedApi => 3,
+        CrashCategory.GameCodeStripping or CrashCategory.InteropAbiMismatch or CrashCategory.NativeOrJniIssue => 2,
+        CrashCategory.LoaderBootstrap => 1,
+        _ => 0
+    };
 
     private CrashDiagnosisResult ClassifyCrash(string matchedType, Match match, string fullLine, string context)
     {
@@ -276,7 +305,7 @@ public class CrashLogAnalyzerService
     {
         if (!string.IsNullOrWhiteSpace(result.TargetAssembly))
         {
-            if (Regex.IsMatch(result.TargetAssembly, @"Version=[5-9]\.", RegexOptions.IgnoreCase))
+            if (Regex.IsMatch(result.TargetAssembly, @"Version=(?:[5-9]|[1-9]\d+)\.", RegexOptions.IgnoreCase))
                 return false;
 
             var name = result.TargetAssembly.Split(',')[0].Trim();
